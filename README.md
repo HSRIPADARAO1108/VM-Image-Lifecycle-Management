@@ -1,79 +1,91 @@
 # Azure Cloud Infrastructure Lab: Marketplace vs. Custom Image Automation
 
 ## 📌 Project Overview
-This project demonstrates a professional cloud deployment lifecycle in Microsoft Azure. I explored the transition from manual server configuration using **Community Marketplace Images** to automated, scalable deployments using a **Custom "Golden" Image** stored in an **Azure Compute Gallery**.
+This repository documents a professional cloud deployment lifecycle in Microsoft Azure. I transitioned from manual server configuration using **Community Marketplace Images** to automated, scalable deployments using a **Custom "Golden" Image** stored in an **Azure Compute Gallery**.
 
 ---
 
 ## 🛠️ Deployment Process Step-by-Step
 
-### Part 3: Community VM Image (Manual Setup)
+### Phase 1: Community VM Image (Part 3)
 * **Objective:** Deploy a base Fedora 40 image and configure it for a web application.
 * **Process:** 1. Provisioned a Fedora 40 VM from the Azure Marketplace.
     2. Connected via SSH to perform manual software installation.
     3. Installed Nginx using `sudo dnf install nginx -y`.
-* **Challenge:** Every new deployment requires manual intervention, which is slow and prone to configuration drift.
+* **Challenge:** Every new deployment requires manual intervention, which is slow and prone to human error.
 
-### Part 4: Custom VM Image (Automated Setup)
+### Phase 2: Custom VM Image (Part 4)
 * **Objective:** Create a reusable template to eliminate manual installation steps.
 * **Process:**
-    1. **Baking:** Configured the source VM and ran `sudo systemctl enable nginx` to ensure the service starts automatically on boot.
-    2. **Generalization:** Prepared the OS using `sudo waagent -deprovision+user -force` to remove unique identifiers.
-    3. **Capture:** Deallocated the VM and captured it into an **Azure Compute Gallery** as Version `1.1.02`.
-    4. **Verification:** Deployed a "Final-Clone" VM from this image, which functioned immediately upon boot without manual setup.
+    1. **Baking:** Configured the source VM and ran `sudo systemctl enable nginx` so the service starts on boot.
+    2. **Generalization:** Prepared the OS using `sudo waagent -deprovision+user -force`.
+    3. **Capture:** Deallocated the VM and captured it into an **Azure Compute Gallery** (Version 1.1.02).
+    4. **Verification:** Deployed a "Final-Clone" VM which functioned immediately without manual setup.
 
 ---
 
 ## 🌐 Resource Configurations
 
 ### 1. Networking Configuration
-* **Virtual Network (VNet):** All resources were isolated within a specific VNet to manage traffic flow.
-* **Public IP Addressing:** Dynamic Public IPs were used for both the source and cloned VMs to verify web accessibility.
-* **Connectivity Verification:** Verified end-to-end connectivity using `curl -I localhost` (internal) and browser-based HTTP requests (external).
+* **Virtual Network (VNet):** Resources were isolated within a specific VNet for security.
+* **Public IP:** Assigned to both source and cloned VMs to verify web accessibility.
+* **Verification:** Confirmed connectivity using internal `curl` and external browser requests.
 
 ### 2. Security (Network Security Group)
-A **Network Security Group (NSG)** was implemented with the following Inbound Rules to secure the environment:
+An **NSG** was implemented with the following Inbound Rules:
 | Priority | Name | Port | Protocol | Action | Purpose |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1000 | AllowSSH | 22 | TCP | Allow | Remote Management |
-| 1010 | AllowHTTP | 80 | TCP | Allow | Web Server Traffic |
-
-### 3. Monitoring & Diagnostics
-* **Boot Diagnostics:** Used to monitor the "Generalization" process and ensure the cloned VM booted correctly from the custom image.
-* **Activity Logs:** Utilized to verify the successful creation of the Image Definition and its replication across the gallery.
+| 1000 | AllowSSH | 22 | TCP | Allow | Management |
+| 1010 | AllowHTTP | 80 | TCP | Allow | Web Traffic |
 
 ---
 
-## 🖼️ Screenshots & Evidence
+## 🖼️ Proof of Success (All 6 Screenshots)
 
-### Source Configuration
+### Step 1: Source VM Configuration
 > ![Source VM Status](./images/01-source-vm-active.png)
-> *Source VM (Fedora01) in a running state.*
+> *Source VM (Fedora01) Active.*
 
-> ![Source Nginx Verify](./images/03-source-curl-verify.png)
-> *Terminal confirmation of successful Nginx installation (HTTP 200 OK).*
+### Step 2: Source Web Verification
+> ![Source Nginx Verify](./images/02-source-nginx-test.png)
+> *Nginx welcome page on Source VM.*
 
-### Image Preparation
+### Step 3: Command Line Confirmation
+> ![Source Curl Verify](./images/03-source-curl-verify.png)
+> *Terminal verification of active service via curl.*
+
+### Step 4: Deallocation for Capture
 > ![VM Deallocated](./images/04-vm-deallocated.png)
-> *VM Stopped and Deallocated, a mandatory state for successful image capture.*
+> *VM in Stopped (deallocated) state, required for the capture process.*
 
-### Automated Success
+### Step 5: Final Clone SSH Test
+Successfully logged into the **cloned** VM. Nginx was already running (200 OK) without any manual commands.
+> ![Clone SSH Verify](./images/05-clone-ssh-verify.png)
+> *Verification that the Custom Image baked the service in correctly.*
+
+### Step 6: Final Clone Browser Test
+The Public IP of the new clone immediately displays the web page.
 > ![Clone Web Verify](./images/06-clone-web-verify.png)
-> *The cloned VM displaying the Fedora/Nginx test page on its own Public IP instantly.*
+> *Final result: Automated deployment successful.*
 
 ---
 
-## 💡 Insights & Challenges (For Presentation)
+## ⚠️ Challenges Faced & Solutions
 
-### Challenges Faced:
-* **The "Dead Service" Bug:** During initial cloning, Nginx was installed but not running.
-* **Solution:** I discovered that for a "Golden Image," services must be **Enabled** (`systemctl enable`) before capture. This ensures the OS starts the service automatically upon deployment.
+During the execution of this lab, I encountered several technical hurdles that required specific cloud-engineering solutions:
 
-### Key Insights:
-* **Community Images:** Great for flexibility and one-off testing but inefficient for production.
-* **Custom Images:** Provide 100% consistency, faster deployment times, and are essential for auto-scaling and disaster recovery.
+1. **Service Inactivity on Clone:** * **Challenge:** After the first capture attempt, the cloned VM had Nginx installed, but the service was `inactive (dead)`. 
+   * **Solution:** I realized that installing a package isn't enough for a template. I had to use `sudo systemctl enable nginx` to register the service in the boot sequence and `sync` to ensure data was written to disk before the snapshot was taken.
+
+2. **Image Generalization Errors:**
+   * **Challenge:** Attempting to capture a VM without deprovisioning leads to "Conflict" errors in Azure because the image still contains specific user data and SSH keys.
+   * **Solution:** Used the Azure Linux Agent command `sudo waagent -deprovision+user -force` to "clean" the OS, making it a generic template.
+
+3. **Connectivity Reset:**
+   * **Challenge:** During the deprovisioning process, the SSH connection was reset, making it appear as if the VM crashed.
+   * **Solution:** This is expected behavior as the agent removes the current user. I proceeded to the Azure Portal to finalize the "Stop" and "Capture" steps once the connection dropped.
 
 ---
 
 ## 🎓 Conclusion
-By moving from manual installations to an **Azure Compute Gallery** workflow, I reduced deployment time by approximately 80%. This project proves that "baking" configurations into images is a superior method for maintaining reliable cloud infrastructure.
+By using **Azure Compute Gallery**, I reduced deployment time by 80%. This project proves that custom images are the backbone of reliable, consistent cloud scaling.
